@@ -22,7 +22,7 @@ async def list_sessions():
     sessions = get_session_manager()
     items = await sessions.list_sessions()
     return {
-        "sessions": [s.model_dump(mode="json") for s in items],
+        "sessions": [s.model_dump(mode="json", by_alias=True) for s in items],
         "total": len(items),
     }
 
@@ -34,7 +34,7 @@ async def create_session():
     session = await sessions.create_session()
     return {
         "session_id": session.session_id,
-        "state": session.state.model_dump(mode="json"),
+        "state": session.state.model_dump(mode="json", by_alias=True),
         "created_at": session.created_at.isoformat(),
     }
 
@@ -49,8 +49,8 @@ async def get_session(session_id: str):
 
     return {
         "session_id": session.session_id,
-        "messages": [m.model_dump(mode="json") for m in session.messages],
-        "state": session.state.model_dump(mode="json"),
+        "messages": [m.model_dump(mode="json", by_alias=True) for m in session.messages],
+        "state": session.state.model_dump(mode="json", by_alias=True),
         "message_count": len(session.messages),
         "created_at": session.created_at.isoformat(),
         "updated_at": session.updated_at.isoformat(),

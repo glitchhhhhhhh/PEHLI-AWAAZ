@@ -12,7 +12,7 @@ export default function LiveConversation() {
   const strategy = useStateStore((s) => s.strategy);
   const persona = useStateStore((s) => s.persona);
 
-  const { sendMessage, startVoice, stopVoice, resetSession } = useSocket();
+  const { sendMessage, startVoice, stopVoice, resetSession, startScenario, sessionId } = useSocket();
 
   const scrollRef = useRef(null);
   useEffect(() => {
@@ -79,9 +79,9 @@ export default function LiveConversation() {
                 )}
                 
                 {/* Message Content */}
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center mb-1">
-                    <span className={`text-sm font-bold ${msg.role === 'user' ? 'text-indigo-600' : 'text-indigo-600'}`}>
+                    <span className={`text-sm font-bold ${msg.role === 'user' ? 'text-indigo-600' : 'text-emerald-600'}`}>
                       {msg.role === 'user' ? 'User' : 'Pehli Awaaz AI'}
                     </span>
                     <div className="flex items-center gap-2">
@@ -98,11 +98,13 @@ export default function LiveConversation() {
                       </span>
                     </div>
                   </div>
-                  <p className="text-[14px] text-slate-700 leading-relaxed">
-                    {msg.text}
-                  </p>
+                  <div className={`p-3 rounded-2xl ${msg.role === 'user' ? 'bg-slate-50 border border-slate-100' : 'bg-emerald-50/50 border border-emerald-100/50'}`}>
+                    <p className="text-[14px] text-slate-700 leading-relaxed break-words">
+                      {msg.text || (msg.role === 'ai' ? '...' : '')}
+                    </p>
+                  </div>
                   {msg.role === 'ai' && isTyping && i === displayMessages.length - 1 && (
-                    <div className="mt-2 flex items-center gap-1 h-4">
+                    <div className="mt-2 flex items-center gap-1 h-4 px-2">
                       {[1,2,3,4,3,2,1].map((h, j) => (
                         <div key={j} className="w-1 bg-indigo-400 rounded-full animate-pulse" style={{ height: `${h * 4}px`, animationDelay: `${j*100}ms` }} />
                       ))}
@@ -219,27 +221,20 @@ export default function LiveConversation() {
           <div className="bg-indigo-600 rounded-2xl p-4 shadow-lg mb-2">
             <h4 className="text-white text-[12px] font-bold uppercase tracking-widest mb-3 opacity-80">Test Scenarios</h4>
             <div className="grid grid-cols-2 gap-2">
-               {[
-                 { id: 'hot', label: '🔥 Hot Lead', color: 'bg-red-400' },
-                 { id: 'warm', label: '⚡ Warm Lead', color: 'bg-amber-400' },
-                 { id: 'cold', label: '🧊 Cold Lead', color: 'bg-blue-400' },
-                 { id: 'multi', label: '🌍 Multi-lingual', color: 'bg-emerald-400' }
-               ].map(s => (
-                 <button 
-                   key={s.id}
-                   onClick={() => {
-                     let text = "";
-                     if(s.id === 'hot') text = "This sounds really good. How quickly can I get started?";
-                     if(s.id === 'warm') text = "How are you different from others? I'm still comparing options.";
-                     if(s.id === 'cold') text = "I'm not really interested. Maybe later.";
-                     if(s.id === 'multi') text = "Mujhe samajhna hai kaise kaam karta hai. Pricing thoda explain karo.";
-                     setInputText(text);
-                   }}
-                   className="flex items-center justify-center py-2 px-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold border border-white/10 transition-all"
-                 >
-                   {s.label}
-                 </button>
-               ))}
+                {[
+                  { id: 'hot', label: '🔥 Hot Lead', color: 'bg-red-400' },
+                  { id: 'warm', label: '⚡ Warm Lead', color: 'bg-amber-400' },
+                  { id: 'cold', label: '🧊 Cold Lead', color: 'bg-blue-400' },
+                  { id: 'multi', label: '🌍 Multi-lingual', color: 'bg-emerald-400' }
+                ].map(s => (
+                  <button 
+                    key={s.id}
+                    onClick={() => startScenario(s.id)}
+                    className="flex items-center justify-center py-2 px-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold border border-white/10 transition-all"
+                  >
+                    {s.label}
+                  </button>
+                ))}
             </div>
           </div>
 
@@ -422,7 +417,7 @@ export default function LiveConversation() {
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-slate-400 font-semibold uppercase">Session ID</span>
-              <span className="text-[13px] text-slate-900 font-bold">#PAZ83921</span>
+              <span className="text-[13px] text-slate-900 font-bold">#{sessionId?.slice(-6).toUpperCase() || '---'}</span>
             </div>
           </div>
           
@@ -432,7 +427,7 @@ export default function LiveConversation() {
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-slate-400 font-semibold uppercase">Time</span>
-              <span className="text-[13px] text-slate-900 font-bold">11:42 AM</span>
+              <span className="text-[13px] text-slate-900 font-bold">{new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
             </div>
           </div>
 

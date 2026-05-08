@@ -55,12 +55,7 @@ export default function LandingPage({ onLaunch }) {
           </div>
         </div>
 
-        {/* Trust Banner */}
-        <div className="w-full max-w-5xl border-t border-gray-200 pt-10 pb-16 flex flex-wrap items-center justify-between gap-8 opacity-60 grayscale">
-          {['HDFC BANK', 'ICICI Bank', 'BAJAJ FINSERV', 'kotak', 'AXIS BANK'].map((logo, i) => (
-            <div key={i} className="text-xl font-bold font-sans tracking-tighter text-slate-400">{logo}</div>
-          ))}
-        </div>
+
 
       </main>
     </div>

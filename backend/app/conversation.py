@@ -177,7 +177,7 @@ class ConversationHandler:
         # 1. Session
         session = await self._sessions.get_or_create(session_id)
         sid = session.session_id
-        yield {"event": "session", "session_id": sid}
+        yield {"event": "session", "payload": {"session_id": sid}}
 
         # 2. Add user message
         user_msg = ChatMessage(role="user", text=user_text, language=language)
@@ -198,11 +198,11 @@ class ConversationHandler:
 
         # 5. Stream thinking steps
         for step in thinking_steps:
-            yield {"event": "thinking", "step": step}
+            yield {"event": "thinking", "payload": {"step": step}}
             await asyncio.sleep(0.1)
 
         # 6. Emit initial state update
-        yield {"event": "state_update", "state": new_state.model_dump(mode="json")}
+        yield {"event": "state_update", "payload": {"state": new_state.model_dump(mode="json", by_alias=True)}}
 
         # 7. Stream AI response tokens
         full_raw_response = ""
@@ -229,87 +229,95 @@ class ConversationHandler:
             
             if is_json_response is False:
                 # Direct streaming for plain text
-                yield {"event": "ai_token", "token": token}
+                yield {"event": "ai_token", "payload": {"token": token}}
                 spoken_buffer += token
             else:
                 # Heuristic for JSON extraction
-                # Look for the start of spoken_response value
                 if not in_spoken_response:
                     if '"spoken_response"' in full_raw_response:
-                        # Find where the actual text starts
                         search_area = full_raw_response.split('"spoken_response"', 1)[1]
                         if ':' in search_area:
                             value_part = search_area.split(':', 1)[1].lstrip()
                             if value_part.startswith('"'):
                                 in_spoken_response = True
-                                # The text starts after the first quote
-                                # We might have already accumulated some of it in this token
-                                # But it's easier to just start yielding from this point onwards
-                                # or extract what's after the quote if it's already there
                                 current_content = value_part[1:]
                                 if current_content:
-                                    yield {"event": "ai_token", "token": current_content}
+                                    yield {"event": "ai_token", "payload": {"token": current_content}}
                                     spoken_buffer += current_content
                 else:
-                    # We are inside the spoken response. Stop at unescaped "
+                    # Inside the spoken response. Stop at unescaped "
                     if token == '"' and not spoken_buffer.endswith('\\'):
                         in_spoken_response = False
+                        # Once spoken response is done, we might have metadata coming
                     else:
-                        yield {"event": "ai_token", "token": token}
+                        yield {"event": "ai_token", "payload": {"token": token}}
                         spoken_buffer += token
 
-        # If heuristic failed or was plain text, ensure spoken_buffer is set
-        if not spoken_buffer:
-            # Fallback parsing
-            try:
-                import json
-                clean_json = full_raw_response.strip()
-                if clean_json.startswith("```json"):
-                    clean_json = clean_json.split("```json")[1].split("```")[0].strip()
-                elif clean_json.startswith("```"):
-                    clean_json = clean_json.split("```")[1].split("```")[0].strip()
-                
-                data = json.loads(clean_json)
+        # Final Fallback & Metadata Extraction
+        try:
+            import json
+            # Handle possible markdown blocks
+            clean_json = full_raw_response.strip()
+            if "```json" in clean_json:
+                clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+            elif "```" in clean_json:
+                clean_json = clean_json.split("```")[1].split("```")[0].strip()
+            
+            # Find the actual JSON object if there's surrounding text
+            if "{" in clean_json and "}" in clean_json:
+                start = clean_json.find("{")
+                end = clean_json.rfind("}") + 1
+                clean_json = clean_json[start:end]
+            
+            data = json.loads(clean_json)
+            if not spoken_buffer:
                 spoken_buffer = data.get("spoken_response", full_raw_response)
-                llm_metadata = data.get("metadata", {})
-            except:
+            llm_metadata = data.get("metadata", {})
+        except Exception as e:
+            if not spoken_buffer:
                 spoken_buffer = full_raw_response
+            logger.warning(f"Metadata extraction failed: {e}")
 
-
-        # Apply metadata to state
+        # 8. Apply metadata to state and Emit Final Update
         if llm_metadata:
+            # Update state properties based on LLM metadata
             if "intent_score" in llm_metadata:
                 new_state.intent_score = float(llm_metadata["intent_score"])
+                if new_state.intent_score >= 7.5: new_state.intent = Persona.TRADER # Mapping hot to persona
             if "trust_score" in llm_metadata:
                 new_state.trust_score = float(llm_metadata["trust_score"])
-            if "persona" in llm_metadata:
-                p = llm_metadata["persona"].lower()
-                if p in [v.value for v in Persona]:
-                    new_state.persona = Persona(p)
-            if "secondary_persona" in llm_metadata:
-                sp = llm_metadata["secondary_persona"].lower()
-                if sp in [v.value for v in Persona]:
-                    new_state.secondary_persona = Persona(sp)
-            if "persona_confidence" in llm_metadata:
-                new_state.persona_confidence = float(llm_metadata["persona_confidence"])
-            if "lead_category" in llm_metadata:
-                new_state.lead_category = llm_metadata["lead_category"]
-            if "emotion" in llm_metadata:
-                new_state.emotion = llm_metadata["emotion"]
-            if "ai_confidence" in llm_metadata:
-                new_state.ai_confidence = float(llm_metadata["ai_confidence"])
             if "conversion_probability" in llm_metadata:
                 new_state.conversion_probability = float(llm_metadata["conversion_probability"])
+            if "ai_confidence" in llm_metadata:
+                new_state.ai_confidence = float(llm_metadata["ai_confidence"])
+            if "emotion" in llm_metadata:
+                new_state.emotion = llm_metadata["emotion"]
+            if "lead_category" in llm_metadata:
+                new_state.lead_category = llm_metadata["lead_category"]
+            if "persona" in llm_metadata:
+                try:
+                    new_state.persona = Persona(llm_metadata["persona"].lower())
+                except: pass
 
-        yield {"event": "ai_complete", "text": spoken_buffer}
-        yield {"event": "state_update", "state": new_state.model_dump(mode="json")}
+        yield {"event": "ai_complete", "payload": {"text": spoken_buffer}}
+        yield {"event": "state_update", "payload": {"state": new_state.model_dump(mode="json", by_alias=True)}}
 
-        # 9. Store
+        # 9. Store results
         ai_msg = ChatMessage(role="ai", text=spoken_buffer, language=new_state.language)
         await self._sessions.add_message(sid, ai_msg)
         await self._sessions.update_state(sid, new_state)
 
-        yield {"event": "done"}
+        # 10. Stream TTS
+        if spoken_buffer:
+            # Prepare voice settings based on metadata or state
+            voice_style = llm_metadata.get("voice_style", {"tone": new_state.emotion})
+            tts_input = {"text": spoken_buffer, "voice_style": voice_style}
+            
+            async for chunk in self.tts.synthesize_streaming(tts_input):
+                yield {"event": "tts_chunk", "audio": chunk}
+            yield {"event": "tts_complete", "payload": {}}
+
+        yield {"event": "done", "payload": {}}
 
     async def handle_voice(
         self,
@@ -388,6 +396,75 @@ class ConversationHandler:
             async for chunk in self.tts.synthesize_streaming(tts_input):
                 yield {"event": "tts_chunk", "audio": chunk}
             yield {"event": "tts_complete"}
+
+
+    async def handle_scenario_start(
+        self,
+        session_id: str,
+        scenario_id: str,
+    ) -> AsyncGenerator[Dict, None]:
+        """
+        Starts a cinematic preset scenario for judging.
+        Sets initial state and generates an AI greeting.
+        """
+        # 1. Get/Create Session
+        session = await self._sessions.get_or_create(session_id)
+        sid = session.session_id
+        
+        # 2. Configure State based on Scenario
+        state = session.state
+        greeting_instruction = ""
+        
+        if scenario_id == "hot":
+            state.intent = IntentLevel.HOT
+            state.intent_score = 8.5
+            state.trust_score = 0.8
+            state.persona = Persona.HIGH_INTENT
+            state.lead_class = LeadClass.HOT
+            state.emotion = "excited"
+            state.conversion_probability = 0.85
+            greeting_instruction = "Give a high-energy, confident welcome to a hot lead who is ready to invest."
+        
+        elif scenario_id == "warm":
+            state.intent = IntentLevel.WARM
+            state.intent_score = 5.5
+            state.trust_score = 0.5
+            state.persona = Persona.BEGINNER
+            state.lead_class = LeadClass.WARM
+            state.emotion = "neutral"
+            state.conversion_probability = 0.4
+            greeting_instruction = "Give a helpful, reassuring welcome to a warm lead who has some questions."
+            
+        elif scenario_id == "cold":
+            state.intent = IntentLevel.COLD
+            state.intent_score = 2.0
+            state.trust_score = 0.3
+            state.persona = Persona.HESITANT
+            state.lead_class = LeadClass.COLD
+            state.emotion = "skeptical"
+            state.conversion_probability = 0.1
+            greeting_instruction = "Give a calm, trust-building welcome to a skeptical cold lead."
+            
+        elif scenario_id == "multi":
+            state.intent = IntentLevel.WARM
+            state.language = Language.HINGLISH
+            state.persona = Persona.TRADER
+            state.emotion = "professional"
+            greeting_instruction = "Give a professional greeting in natural mixed Hindi-English (Hinglish)."
+
+        await self._sessions.update_state(sid, state)
+        
+        # 3. Emit initial state
+        yield {"event": "state_update", "payload": {"state": state.model_dump(mode="json", by_alias=True)}}
+        
+        # 4. Generate AI Greeting
+        prompt = f"[SYSTEM: SCENARIO {scenario_id.upper()}] {greeting_instruction}"
+        
+        # We use handle_text_stream with a special prompt to generate the greeting
+        # but since we want it to be a greeting, we pass it as a user message 
+        # but we'll mark it as a system-triggered start.
+        async for event in self.handle_text_stream(sid, prompt, state.language):
+            yield event
 
 
 # ── Singleton ────────────────────────────────────────────

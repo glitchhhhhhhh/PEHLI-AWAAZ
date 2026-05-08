@@ -10,7 +10,8 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 
 # ── Enums ───────────────────────────────────────────────
@@ -75,6 +76,8 @@ class ChatMessage(BaseModel):
 
 class ConversationState(BaseModel):
     """Full AI brain state — kept in sync with the frontend dashboard."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     intent: IntentLevel = IntentLevel.COLD
     intent_score: float = 0.0          # 0-10 scale
     trust_score: float = 0.5           # 0-1 scale (user requested 0-1)

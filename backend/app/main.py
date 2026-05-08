@@ -77,6 +77,15 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(websocket.router)
 
+    # ── Static Frontend ──────────────────────────────
+    import os
+    from fastapi.staticfiles import StaticFiles
+    
+    # In production, we serve the 'public' directory (built from Vite)
+    static_path = "public"
+    if os.path.exists(static_path):
+        app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
+
     # ── Health check ─────────────────────────────────
     @app.get("/health", tags=["System"])
     async def health():

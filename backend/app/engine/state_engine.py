@@ -139,6 +139,11 @@ class StateEngine:
         if memory_triggered:
             thinking.append(f"🧠 Memory: {len(new_facts) - len(current.memory_facts)} new fact(s) stored")
 
+        # ── 11. Emotion & Confidence ─────────────────────
+        emotion = self._detect_emotion(text_lower, objection, new_trust)
+        ai_confidence = self._compute_ai_confidence(turn_number, new_trust, persona)
+        conversion_prob = self._compute_conversion_prob(new_lead_score, new_trust, stage)
+
         # ── Assemble ─────────────────────────────────────
         new_state = ConversationState(
             intent=intent,
@@ -153,9 +158,9 @@ class StateEngine:
             language=lang,
             lead_score=round(new_lead_score, 1),
             lead_class=lead_class,
-            emotion=current.emotion,
-            ai_confidence=current.ai_confidence,
-            conversion_probability=current.conversion_probability,
+            emotion=emotion,
+            ai_confidence=round(ai_confidence, 2),
+            conversion_probability=round(conversion_prob, 2),
             memory_facts=new_facts,
             thinking_steps=thinking,
             memory_triggered=memory_triggered,
@@ -224,7 +229,7 @@ class StateEngine:
         return round(delta, 3)
 
     def _compute_lead_score(self, trust: float, engagement: float, objection: Optional[str]) -> float:
-        score = (trust * 0.45) + (engagement * 0.45)
+        score = (trust * 5.0) + (engagement * 0.5)
         if objection:
             score *= 0.85
         return round(min(10.0, max(0.0, score)), 1)
@@ -292,19 +297,43 @@ class StateEngine:
     def _extract_memory_facts(self, text: str, existing: List[str]) -> List[str]:
         facts = list(existing)
         patterns = {
-            "Has existing broker": ["broker", "existing"],
-            "Active trader": ["trading", "trade", "intraday"],
-            "Price sensitive": ["expensive", "mehnga", "cost", "fees"],
-            "Beginner investor": ["start karna", "beginner", "pehli baar", "naya"],
-            "Interested in mutual funds": ["mutual fund", "SIP", "MF"],
-            "Safety conscious": ["safe", "risk", "secure", "khatre"],
-            "Time constrained": ["busy", "time nahi", "baad mein"],
-            "Ready to start investing": ["start karna hai", "ready", "chalega", "kar do"],
+            "Has existing broker": ["broker", "existing", "zerodha", "upstox", "groww", "angel", "icici"],
+            "Active trader": ["trading", "trade", "intraday", "options", "f&o", "nifty", "bank nifty"],
+            "Price sensitive": ["expensive", "mehnga", "cost", "fees", "charges", "paisa", "free"],
+            "Beginner investor": ["start karna", "beginner", "pehli baar", "naya", "knowledge", "basics"],
+            "Interested in mutual funds": ["mutual fund", "SIP", "MF", "elss", "index fund"],
+            "Safety conscious": ["safe", "risk", "secure", "khatre", "loss", "sebi", "legal"],
+            "Time constrained": ["busy", "time nahi", "baad mein", "meeting", "office", "kal"],
+            "Ready to start investing": ["start karna hai", "ready", "chalega", "kar do", "sign up", "link"],
+            "High net worth signals": ["crore", "lakh", "portfolio", "large capital", "wealth manager"],
+            "Interested in diversification": ["gold", "real estate", "crypto", "diversify", "allocation"],
         }
         for fact, keywords in patterns.items():
             if fact not in facts and any(kw in text for kw in keywords):
                 facts.append(fact)
         return facts
+
+    def _detect_emotion(self, text: str, objection: Optional[str], trust: float) -> str:
+        if objection == "trust": return "skeptical"
+        if any(w in text for w in ["waah", "great", "awesome", "shandar", "badhiya", "interested"]): return "excited"
+        if any(w in text for w in ["pata nahi", "confused", "kaise", "samajh nahi"]): return "confused"
+        if any(w in text for w in ["sir", "aap", "professional", "details", "process"]): return "professional"
+        if trust < 0.3: return "hesitant"
+        if trust > 0.8: return "confident"
+        return "neutral"
+
+    def _compute_ai_confidence(self, turn: int, trust: float, persona: Persona) -> float:
+        base = 0.7
+        if trust > 0.7: base += 0.2
+        if persona != Persona.UNKNOWN: base += 0.1
+        if turn > 5: base -= 0.05 # Entropy increases in long conversations
+        return min(1.0, max(0.0, base))
+
+    def _compute_conversion_prob(self, lead_score: float, trust: float, stage: ConversationStage) -> float:
+        prob = (lead_score / 10.0) * 0.6 + (trust * 0.4)
+        if stage == ConversationStage.CLOSING: prob += 0.1
+        if stage == ConversationStage.INTRO: prob -= 0.05
+        return min(0.99, max(0.01, prob))
 
 
 # ── Singleton ────────────────────────────────────────────

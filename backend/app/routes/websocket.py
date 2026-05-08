@@ -79,7 +79,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
     # Send current state
     await _send_json(websocket, "state_update", {
-        "state": session.state.model_dump(mode="json"),
+        "state": session.state.model_dump(mode="json", by_alias=True),
     })
 
     handler = get_conversation_handler()
@@ -158,6 +158,15 @@ async def _handle_text_frame(
             else:
                 await _send_json(ws, event_type, evt)
 
+    elif event == "start_scenario":
+        scenario_id = payload.get("scenario_id", "hot")
+        async for evt in handler.handle_scenario_start(session_id, scenario_id):
+            event_type = evt.get("event", "")
+            if event_type == "tts_chunk":
+                await ws.send_bytes(evt["audio"])
+            else:
+                await _send_json(ws, event_type, evt)
+
     else:
         await _send_json(ws, "error", {"detail": f"Unknown event: {event}"})
 
@@ -197,9 +206,20 @@ async def _handle_audio_frame(
 
 
 async def _send_json(ws: WebSocket, event: str, payload: dict):
-    """Send a JSON frame to the WebSocket."""
+    """
+    Send a JSON frame to the WebSocket.
+    Avoids double-nesting if payload already contains the target structure.
+    """
     try:
-        await ws.send_json({"event": event, "payload": payload})
+        # If payload already has the event key, it's a pre-built frame
+        if "event" in payload and payload["event"] == event:
+            # Check if it has a 'payload' or 'data' key to unwrap if necessary
+            # For simplicity, we assume the handler yields the inner payload directly
+            # OR the handler yields the full frame.
+            # Let's standardize: handlers yield the full frame.
+            await ws.send_json(payload)
+        else:
+            await ws.send_json({"event": event, "payload": payload})
     except Exception:
         pass  # Connection may have closed
 

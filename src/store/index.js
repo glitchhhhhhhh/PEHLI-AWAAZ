@@ -9,6 +9,18 @@ export const useConversationStore = create((set, get) => ({
   addMessage: (msg) =>
     set((s) => ({ messages: [...s.messages, { ...msg, id: Date.now() + Math.random(), timestamp: new Date().toISOString(), audioUrl: msg.audioUrl || null }] })),
 
+  updateLastMessage: (text) =>
+    set((s) => {
+      if (s.messages.length === 0) return s;
+      const newMessages = [...s.messages];
+      const last = newMessages[newMessages.length - 1];
+      if (last.role === 'ai') {
+        newMessages[newMessages.length - 1] = { ...last, text: last.text + text };
+        return { messages: newMessages };
+      }
+      return s;
+    }),
+
   setTyping: (v) => set({ isAITyping: v }),
   setRecording: (v) => set({ isRecording: v }),
   setInputMode: (m) => set({ inputMode: m }),
@@ -42,8 +54,12 @@ export const useStateStore = create((set) => ({
   thinkingSteps: [],
   memoryTriggered: false,
 
-  updateState: (partial) => set((s) => ({ ...s, ...partial })),
-  addThinkingStep: (step) => set((s) => ({ thinkingSteps: [...s.thinkingSteps, step] })),
+  updateState: (partial) => set((s) => {
+    // If partial contains a 'state' key (nested), we unwrap it
+    const data = partial.state ? partial.state : partial;
+    return { ...s, ...data };
+  }),
+  addThinkingStep: (step) => set((s) => ({ thinkingSteps: [...s.thinkingSteps, step].slice(-10) })),
   clearThinking: () => set({ thinkingSteps: [] }),
   resetState: () =>
     set({

@@ -155,6 +155,17 @@ class WebSocketClient {
   }
 
   /**
+   * Trigger a cinematic preset scenario.
+   * @param {string} scenarioId 
+   */
+  sendScenario(scenarioId) {
+    this._sendJSON({
+      event: 'start_scenario',
+      payload: { scenario_id: scenarioId },
+    });
+  }
+
+  /**
    * Send raw audio bytes through the WebSocket.
    * @param {ArrayBuffer|Blob} audioData
    */
