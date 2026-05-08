@@ -53,6 +53,7 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const sessionIdRef = useRef(null);
   const streamingTextRef = useRef('');
   const mediaRecorderRef = useRef(null);
@@ -74,6 +75,7 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
     const ws = getWSClient();
     const sid = sessionIdRef.current || `session-${Date.now()}`;
     sessionIdRef.current = sid;
+    setSessionId(sid);
 
     ws.connect(sid, {
       onConnected: () => {
@@ -89,6 +91,7 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
 
       onSession: (newSid) => {
         sessionIdRef.current = newSid;
+        setSessionId(newSid);
       },
 
       onThinking: (step) => {
@@ -158,42 +161,12 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
     };
   }, [mode, autoConnect, addMessage, setTyping, updateState, addThinkingStep, clearThinking]);
 
-  // ── Send Text Message ────────────────────────────────
-
-  const sendMessage = useCallback(
-    async (text, language = 'hinglish') => {
-      if (!text.trim()) return;
-
-      setError(null);
-      setIsProcessing(true);
-
-      // Add user message to store immediately
-      addMessage({ role: 'user', text, language });
-      setTyping(true);
-      clearThinking();
-
-      if (mode === 'websocket') {
-        // Stream via WebSocket
-        const ws = getWSClient();
-        if (ws.isConnected) {
-          streamingTextRef.current = '';
-          ws.sendText(text, language);
-        } else {
-          // Fallback to REST if WS disconnected
-          await _sendViaREST(text, language);
-        }
-      } else {
-        // REST mode
-        await _sendViaREST(text, language);
-      }
-    },
-    [mode, addMessage, setTyping, clearThinking, updateState],
-  );
-
-  async function _sendViaREST(text, language) {
+  // ── Send via REST helper ──
+  const _sendViaREST = useCallback(async (text, language) => {
     try {
       const response = await apiSendMessage(text, sessionIdRef.current, language);
       sessionIdRef.current = response.session_id;
+      setSessionId(response.session_id);
 
       // Stream thinking steps with delay for UX
       if (response.thinking_steps) {
@@ -227,7 +200,42 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
     } finally {
       setIsProcessing(false);
     }
-  }
+  }, [addMessage, addThinkingStep, setTyping, updateState]);
+
+  // ── Send Text Message ────────────────────────────────
+
+
+  const sendMessage = useCallback(
+    async (text, language = 'hinglish') => {
+      if (!text.trim()) return;
+
+      setError(null);
+      setIsProcessing(true);
+
+      // Add user message to store immediately
+      addMessage({ role: 'user', text, language });
+      setTyping(true);
+      clearThinking();
+
+      if (mode === 'websocket') {
+        // Stream via WebSocket
+        const ws = getWSClient();
+        if (ws.isConnected) {
+          streamingTextRef.current = '';
+          ws.sendText(text, language);
+        } else {
+          // Fallback to REST if WS disconnected
+          await _sendViaREST(text, language);
+        }
+      } else {
+        // REST mode
+        await _sendViaREST(text, language);
+      }
+    },
+    [mode, addMessage, setTyping, clearThinking, _sendViaREST],
+  );
+
+
 
   // ── Voice Recording ──────────────────────────────────
 
@@ -302,6 +310,7 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
             const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
             const response = await uploadVoice(blob, sessionIdRef.current);
             sessionIdRef.current = response.session_id;
+            setSessionId(response.session_id);
 
             // Add user transcript
             addMessage({
@@ -367,6 +376,7 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
       ws.disconnect();
       const newSid = `session-${Date.now()}`;
       sessionIdRef.current = newSid;
+      setSessionId(newSid);
       // Will reconnect on next message or can call connect manually
     }
   }, [mode]);
@@ -380,7 +390,7 @@ export function useBackend({ mode = 'websocket', autoConnect = true } = {}) {
     isProcessing,
     error,
     mode,
-    sessionId: sessionIdRef.current,
+    sessionId,
   };
 }
 

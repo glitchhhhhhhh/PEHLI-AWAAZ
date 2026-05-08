@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useConversationStore, useStateStore } from '../../store';
 import { useSocket } from '../../hooks/useSocket';
 
@@ -44,8 +44,16 @@ export default function LiveConversation() {
     }
   };
 
+  // Fixed heights for the recording animation to satisfy purity rules
+  const randomHeights = [18, 24, 32, 20, 28, 22, 16];
+
+  
   // Only show demo if no messages
   const displayMessages = messages.length > 0 ? messages : [];
+  
+  // Current time for bottom bar (stable for this render)
+  const currentTime = useMemo(() => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), []);
+
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -94,7 +102,7 @@ export default function LiveConversation() {
                         </button>
                       )}
                       <span className="text-[11px] text-slate-400 font-medium">
-                        {new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                        {new Date(msg.timestamp || 0).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                       </span>
                     </div>
                   </div>
@@ -180,7 +188,7 @@ export default function LiveConversation() {
               <div className="absolute inset-0 bg-white/20 blur-md rounded-full mix-blend-overlay" />
               <div className="relative flex items-center gap-1.5 h-12 z-10">
                 {[1,3,5,7,5,3,1].map((h, i) => (
-                  <div key={i} className={`w-1.5 bg-white rounded-full ${isRecording ? 'animate-pulse' : ''}`} style={{ height: `${isRecording ? Math.random()*24 + 12 : h * 6 + 10}px` }} />
+                  <div key={i} className={`w-1.5 bg-white rounded-full ${isRecording ? 'animate-pulse' : ''}`} style={{ height: `${isRecording ? randomHeights[i] : h * 6 + 10}px` }} />
                 ))}
               </div>
             </div>
@@ -427,7 +435,7 @@ export default function LiveConversation() {
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-slate-400 font-semibold uppercase">Time</span>
-              <span className="text-[13px] text-slate-900 font-bold">{new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+              <span className="text-[13px] text-slate-900 font-bold">{currentTime}</span>
             </div>
           </div>
 

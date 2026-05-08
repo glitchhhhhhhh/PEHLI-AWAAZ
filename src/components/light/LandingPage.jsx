@@ -1,7 +1,17 @@
-import React from 'react';
+import { } from 'react';
 import Navbar from './Navbar';
 
 export default function LandingPage({ onLaunch }) {
+  const bars = [
+    40, 60, 30, 70, 50, 20, 80, 45, 65, 35,
+    55, 75, 40, 60, 30, 70, 50, 20, 80, 45,
+    65, 35, 55, 75, 40, 60, 30, 70, 50, 20,
+    80, 45, 65, 35, 55, 75, 40, 60, 30, 70,
+    50, 20, 80, 45, 65, 35, 55, 75, 40, 60,
+    30, 70, 50, 20, 80, 45, 65, 35, 55, 75
+  ];
+
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col relative overflow-hidden">
       <Navbar onLaunch={onLaunch} />
@@ -44,9 +54,9 @@ export default function LandingPage({ onLaunch }) {
         {/* Central Audio Graphic */}
         <div className="w-full max-w-5xl relative flex items-center justify-center h-32 mb-20">
           <div className="absolute inset-0 flex items-center justify-center gap-1 opacity-20">
-             {[...Array(60)].map((_, i) => (
-               <div key={i} className="w-1.5 bg-indigo-600 rounded-full" style={{ height: `${Math.random() * 80 + 10}px` }} />
-             ))}
+            {bars.map((h, i) => (
+              <div key={i} className="w-1.5 bg-indigo-600 rounded-full" style={{ height: `${h}px` }} />
+            ))}
           </div>
           <div className="relative z-10 w-20 h-20 bg-white rounded-full shadow-float flex items-center justify-center border border-indigo-50">
             <div className="absolute inset-0 rounded-full border border-indigo-100 scale-110" />

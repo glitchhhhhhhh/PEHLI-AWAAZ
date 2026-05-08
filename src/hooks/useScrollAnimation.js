@@ -39,7 +39,7 @@ export function useCountUp(target, duration = 2000, trigger = true) {
   const frameRef = useRef(null);
 
   useEffect(() => {
-    if (!trigger) { setValue(0); return; }
+    if (!trigger) return;
 
     let start = null;
     const animate = (timestamp) => {
@@ -57,7 +57,7 @@ export function useCountUp(target, duration = 2000, trigger = true) {
     return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
   }, [target, duration, trigger]);
 
-  return value;
+  return trigger ? value : 0;
 }
 
 /**

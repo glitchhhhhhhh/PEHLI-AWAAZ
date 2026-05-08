@@ -1,4 +1,3 @@
-import React from 'react';
 import { useStateStore } from '../../store';
 
 export default function RMDashboard() {

@@ -1,15 +1,17 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getWSClient } from '../services/websocket';
 import { useConversationStore, useStateStore } from '../store';
-
-const SocketContext = createContext(null);
+import { SocketContext } from './SocketContext';
 
 export const SocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
   
-  const sessionIdRef = useRef(`session-${Date.now()}`);
+  // Use lazy initializer to avoid "setState in effect" and keep it stable
+   
+  const [sessionId, setSessionId] = useState(() => `session-${Date.now()}`);
+  
   const mediaRecorderRef = useRef(null);
   const audioContextRef = useRef(null);
   const audioQueueRef = useRef([]);
@@ -29,17 +31,20 @@ export const SocketProvider = ({ children }) => {
 
   const hasAIStartedRef = useRef(false);
 
-  // ── Audio Playback Engine (Gapless Streaming) ────────────────
-  const initAudioContext = () => {
+  // ── Audio Playback Engine ──
+  const initAudioContext = useCallback(() => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (audioContextRef.current.state === 'suspended') {
       audioContextRef.current.resume();
     }
-  };
+  }, []);
 
-  const playNextChunk = async () => {
+  // Use a ref for playNextChunk to allow recursive calls without TDZ/dependency issues
+  const playNextChunkRef = useRef(null);
+
+  const playNextChunk = useCallback(async () => {
     if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
     
     isPlayingRef.current = true;
@@ -52,24 +57,32 @@ export const SocketProvider = ({ children }) => {
       source.connect(audioContextRef.current.destination);
       source.onended = () => {
         isPlayingRef.current = false;
-        playNextChunk();
+        if (playNextChunkRef.current) playNextChunkRef.current();
       };
       source.start(0);
     } catch (e) {
       console.error('[Audio] Playback error:', e);
       isPlayingRef.current = false;
-      playNextChunk();
+      if (playNextChunkRef.current) playNextChunkRef.current();
     }
-  };
+  }, []);
 
-  // ── WebSocket Setup ──────────────────────────────────────────
   useEffect(() => {
+    playNextChunkRef.current = playNextChunk;
+  }, [playNextChunk]);
+
+  // ── WebSocket Setup ──
+  useEffect(() => {
+    if (sessionId === 'session-pending') return;
+
     const ws = getWSClient();
     
     const handlers = {
       onConnected: () => { setIsConnected(true); setError(null); },
       onDisconnected: () => { setIsConnected(false); },
-      onSession: (sid) => { sessionIdRef.current = sid; },
+      onSession: (sid) => { 
+        setSessionId(sid);
+      },
       onThinking: (step) => addThinkingStep(step),
       onStateUpdate: (state) => updateState(state),
       onAIToken: (token) => {
@@ -95,7 +108,7 @@ export const SocketProvider = ({ children }) => {
       onTTSChunk: (chunk) => {
         initAudioContext();
         audioQueueRef.current.push(chunk);
-        playNextChunk();
+        if (playNextChunkRef.current) playNextChunkRef.current();
       },
       onTTSComplete: () => {
         console.log('[TTS] Synthesis complete');
@@ -108,14 +121,14 @@ export const SocketProvider = ({ children }) => {
       }
     };
 
-    ws.connect(sessionIdRef.current, handlers);
+    ws.connect(sessionId, handlers);
 
     return () => {
       ws.disconnect();
     };
-  }, []); // Run once on mount
+  }, [sessionId, addMessage, updateLastMessage, setTyping, addThinkingStep, updateState, clearThinking, initAudioContext]);
 
-  const sendMessage = (text) => {
+  const sendMessage = useCallback((text) => {
     if (!text.trim() || isProcessing) return;
     setIsProcessing(true);
     setTyping(true);
@@ -129,9 +142,9 @@ export const SocketProvider = ({ children }) => {
       setIsProcessing(false);
       setTyping(false);
     }
-  };
+  }, [isProcessing, addMessage, setTyping]);
 
-  const startVoice = async () => {
+  const startVoice = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       initAudioContext();
@@ -154,9 +167,9 @@ export const SocketProvider = ({ children }) => {
       console.error('[Mic] Access denied:', e);
       setError('Microphone access denied');
     }
-  };
+  }, [initAudioContext, setRecording]);
 
-  const stopVoice = () => {
+  const stopVoice = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
@@ -169,18 +182,19 @@ export const SocketProvider = ({ children }) => {
     setRecording(false);
     setIsProcessing(true);
     setTyping(true);
-  };
+  }, [setRecording, setTyping]);
 
-  const resetSession = () => {
+  const resetSession = useCallback(() => {
     const ws = getWSClient();
     ws.disconnect();
-    sessionIdRef.current = `session-${Date.now()}`;
+    const newSid = `session-${Date.now()}`;
+    setSessionId(newSid);
     clearConversation();
     resetState();
     window.location.reload(); 
-  };
+  }, [clearConversation, resetState]);
 
-  const startScenario = (scenarioId) => {
+  const startScenario = useCallback((scenarioId) => {
     setIsProcessing(true);
     setTyping(true);
     const ws = getWSClient();
@@ -191,7 +205,7 @@ export const SocketProvider = ({ children }) => {
       setIsProcessing(false);
       setTyping(false);
     }
-  };
+  }, [setTyping]);
 
   const value = {
     isConnected,
@@ -202,16 +216,8 @@ export const SocketProvider = ({ children }) => {
     stopVoice,
     resetSession,
     startScenario,
-    sessionId: sessionIdRef.current,
+    sessionId,
   };
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
-};
-
-export const useSocket = () => {
-  const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error('useSocket must be used within a SocketProvider');
-  }
-  return context;
 };

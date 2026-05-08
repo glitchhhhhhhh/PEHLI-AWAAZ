@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export const useConversationStore = create((set, get) => ({
+export const useConversationStore = create((set) => ({
   messages: [],
   isRecording: false,
   isAITyping: false,
